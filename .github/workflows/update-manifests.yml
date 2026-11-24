@@ -51,7 +51,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Checkout bucket
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Scoop
         shell: pwsh
