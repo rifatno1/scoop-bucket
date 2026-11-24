@@ -1,0 +1,65 @@
+{
+    "version": "14.0.1",
+    "description": "A YouTube Music client for desktop",
+    "homepage": "https://github.com/MetrolistGroup/Metrolist",
+    "license": "GPL-3.0-only",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/MetrolistGroup/Metrolist/releases/download/v14.0.1/Metrolist-Desktop-windows.zip",
+            "hash": "535c7f5b11e34537cf30a9fd4c1b16195dab475c3d032ed103a5ca9cf4a9f795"
+        },
+        "arm64": {
+            "url": "https://github.com/MetrolistGroup/Metrolist/releases/download/v14.0.1/metrolist-desktop-windows-arm64-14.0.1.zip",
+            "hash": "775a5d97cf34ae557992be40a67f728f40f84097294d0b69391cf8467efc4909"
+        }
+    },
+    "post_install": [
+        "$mappings = @{",
+        "    \"$env:USERPROFILE\\.local\\share\\metrolist\" = \"$persist_dir\\share\"",
+        "    \"$env:USERPROFILE\\.local\\state\\metrolist\" = \"$persist_dir\\state\"",
+        "    \"$env:LOCALAPPDATA\\Metrolist\"              = \"$persist_dir\\cache\"",
+        "}",
+        "foreach ($src in $mappings.Keys) {",
+        "    $dst = $mappings[$src]",
+        "    New-Item -ItemType Directory -Path $dst -Force | Out-Null",
+        "    if ((Test-Path $src) -and -not ((Get-Item $src -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {",
+        "        Get-ChildItem -Path $src -Force | Copy-Item -Destination $dst -Recurse -Force -ErrorAction SilentlyContinue",
+        "        Remove-Item $src -Recurse -Force",
+        "    }",
+        "    if (-not (Test-Path $src)) {",
+        "        New-Item -ItemType Directory -Path (Split-Path $src) -Force | Out-Null",
+        "        New-Item -ItemType Junction -Path $src -Target $dst | Out-Null",
+        "    }",
+        "}"
+    ],
+    "post_uninstall": [
+        "if ($purge) {",
+        "    $links = @(\"$env:USERPROFILE\\.local\\share\\metrolist\", \"$env:USERPROFILE\\.local\\state\\metrolist\", \"$env:LOCALAPPDATA\\Metrolist\")",
+        "    foreach ($link in $links) {",
+        "        if (Test-Path $link) { [System.IO.Directory]::Delete($link) }",
+        "    }",
+        "}"
+    ],
+    "shortcuts": [
+        [
+            "Metrolist.exe",
+            "Metrolist"
+        ]
+    ],
+    "checkver": {
+        "github": "https://github.com/MetrolistGroup/Metrolist"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/MetrolistGroup/Metrolist/releases/download/v$version/Metrolist-Desktop-windows.zip"
+            },
+            "arm64": {
+                "url": "https://github.com/MetrolistGroup/Metrolist/releases/download/v$version/metrolist-desktop-windows-arm64-$version.zip"
+            }
+        },
+        "hash": {
+            "url": "https://github.com/MetrolistGroup/Metrolist/releases/download/v$version/SHA256SUMS"
+        }
+    }
+}
