@@ -1,0 +1,90 @@
+# Save as: .github/workflows/update-manifests.yml
+# Checks every manifest for a new upstream version once a day and commits the
+# updates straight to the branch (no pull requests). Skips if another run
+# of this workflow is already in progress.
+name: Update manifests
+
+on:
+  workflow_dispatch:
+  schedule:
+    # once a day at 00:20 UTC (06:20 Asia/Dhaka)
+    - cron: '20 0 * * *'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  guard:
+    name: Check for running instances
+    runs-on: ubuntu-latest
+    outputs:
+      busy: ${{ steps.check.outputs.busy }}
+    steps:
+      - name: Look for other in-progress runs
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          others=0
+          for status in in_progress queued; do
+            n=$(gh api "repos/$REPO/actions/workflows/update-manifests.yml/runs?status=$status&per_page=100" \
+                  --jq "[.workflow_runs[] | select(.id != $RUN_ID)] | length")
+            others=$((others + n))
+          done
+          if [ "$others" -gt 0 ]; then
+            echo "Another run is already active ($others found) - skipping."
+            echo "busy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "busy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  update:
+    needs: guard
+    if: needs.guard.outputs.busy == 'false'
+    runs-on: windows-latest
+    # Safety net for the rare case two runs start at the same moment
+    concurrency:
+      group: update-manifests
+      cancel-in-progress: false
+    steps:
+      - name: Checkout bucket
+        uses: actions/checkout@v4
+
+      - name: Install Scoop
+        shell: pwsh
+        run: |
+          iex "& {$(irm get.scoop.sh)} -RunAsAdmin"
+          Join-Path (Resolve-Path ~).Path "scoop\shims" >> $Env:GITHUB_PATH
+
+      - name: Run checkver and update manifests
+        shell: pwsh
+        run: |
+          # Use the checkver.ps1 that ships with Scoop itself, so the repo
+          # does not need its own bin/checkver.ps1.
+          $checkver = Join-Path (scoop prefix scoop) 'bin\checkver.ps1'
+          if (-not (Test-Path $checkver)) { throw "checkver.ps1 not found at $checkver" }
+
+          # Manifests live in ./bucket
+          $dir = (Resolve-Path ./bucket).Path
+
+          # -Update rewrites manifests that have a newer version
+          # (uses each manifest's checkver + autoupdate; also refreshes hashes)
+          & $checkver -Dir $dir -Update
+          # To check only specific apps: & $checkver -Dir $dir -App app1,app2 -Update
+
+      - name: Commit and push changes
+        shell: pwsh
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if (git status --porcelain) {
+            git add bucket/
+            git commit -m "chore: auto-update manifests ($(Get-Date -Format 'yyyy-MM-dd HH:mm') UTC)"
+            git pull --rebase
+            git push
+          } else {
+            Write-Host "No updates found."
+          }
